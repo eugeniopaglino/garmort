@@ -553,41 +553,32 @@ predict_mortality_rates <- function(object,
     est_list[[i]] <- est_dt
     
     # Posterior simulations
-    if (n_sim > 0L && length(b_raw) > 0L) {
-      if (is_scam && !is.null(eng$Vp.t) && all(dim(eng$Vp.t) == c(length(b_hat), length(b_hat)))) {
-        # Simulate directly on delta-method transformed scale for scam
-        beta_sims <- MASS::mvrnorm(n_sim, mu = b_hat, Sigma = eng$Vp.t)
-        if (is.null(dim(beta_sims))) beta_sims <- matrix(beta_sims, nrow = 1L)
+    if (n_sim > 0L && length(b_raw) > 0L && !is.null(eng$Vp) &&
+        all(dim(eng$Vp) == c(length(b_raw), length(b_raw)))) {
+      beta_sims <- MASS::mvrnorm(n_sim, mu = b_raw, Sigma = eng$Vp)
+      if (is.null(dim(beta_sims))) beta_sims <- matrix(beta_sims, nrow = 1L)
+      if (is_scam) {
         p_id <- eng$p.ident
-        beta_sims[, p_id] <- pmax(beta_sims[, p_id, drop = FALSE], 0)
-      } else if (!is.null(eng$Vp) && all(dim(eng$Vp) == c(length(b_raw), length(b_raw)))) {
-        beta_sims <- MASS::mvrnorm(n_sim, mu = b_raw, Sigma = eng$Vp)
-        if (is.null(dim(beta_sims))) beta_sims <- matrix(beta_sims, nrow = 1L)
-        if (is_scam) {
-          p_id <- eng$p.ident
-          beta_sims[, p_id] <- exp(pmin(beta_sims[, p_id, drop = FALSE], 5))
-        }
-      } else {
-        beta_sims <- NULL
+        beta_sims[, p_id] <- exp(pmin(beta_sims[, p_id, drop = FALSE], 5))
       }
       
-      if (!is.null(beta_sims)) {
-        eta_sims <- Xp %*% t(beta_sims)
-        eta_sims <- pmin(pmax(eta_sims, -30), log(1.5))
-        rate_sims <- exp(eta_sims)
-        
-        if (!is.null(fit_wrap$kannisto_mod) && length(hi_idx) > 0L) {
-          rate_sims[hi_idx, ] <- (1 - w_k) * rate_sims[hi_idx, , drop = FALSE] + w_k * mx_k
-        }
-        
-        s_dt <- data.table::as.data.table(rate_sims)
-        data.table::setnames(s_dt, paste0("sim_", seq_len(n_sim)))
-        s_dt <- cbind(data.table::data.table(x = nd$x), s_dt)
-        if (!is.null(by_cols) && length(by_cols) > 0L) {
-          for (col in by_cols) s_dt[, (col) := g_row[[col]]]
-        }
-        sim_list[[i]] <- s_dt
+      eta_sims <- Xp %*% t(beta_sims)
+      # Guard against extreme numerical outliers while preserving full posterior spread
+      eta_sims <- eta_hat + pmin(pmax(eta_sims - eta_hat, -5), 5)
+      eta_sims <- pmin(pmax(eta_sims, -30), log(1.5))
+      rate_sims <- exp(eta_sims)
+      
+      if (!is.null(fit_wrap$kannisto_mod) && length(hi_idx) > 0L) {
+        rate_sims[hi_idx, ] <- (1 - w_k) * rate_sims[hi_idx, , drop = FALSE] + w_k * mx_k
       }
+      
+      s_dt <- data.table::as.data.table(rate_sims)
+      data.table::setnames(s_dt, paste0("sim_", seq_len(n_sim)))
+      s_dt <- cbind(data.table::data.table(x = nd$x), s_dt)
+      if (!is.null(by_cols) && length(by_cols) > 0L) {
+        for (col in by_cols) s_dt[, (col) := g_row[[col]]]
+      }
+      sim_list[[i]] <- s_dt
     }
   }
   
