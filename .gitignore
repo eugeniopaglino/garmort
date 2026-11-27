@@ -6,3 +6,4 @@ test-diagnostics/
 .DS_Store
 data-raw/hmd/
 .quarto
+.Rproj
