@@ -26,7 +26,7 @@ Install the development version directly from GitHub:
 
 ```r
 # install.packages("remotes")
-remotes::install_github("<your-username>/garmort")
+remotes::install_github("eugeniopaglino/garmort")
 ```
 
 Optional packages enabling monotonic spline fallbacks, cross-platform parallel workers, and diagnostic plots:
