@@ -1,7 +1,7 @@
 # garmort
 
 <!-- badges: start -->
-[![R-CMD-check](https://github.com/<your-username>/garmort/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/<your-username>/garmort/actions/workflows/R-CMD-check.yaml)
+[![R-CMD-check](https://github.com/eugeniopaglino/garmort/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/eugeniopaglino/garmort/actions/workflows/R-CMD-check.yaml)
 <!-- badges: end -->
 
 **garmort** provides modular tools for constructing smoothed reference mortality standards, fitting count-based relational generalized additive mortality models (GARM) across demographic strata, propagating parameter uncertainty via empirical Bayes posterior simulation, and computing single-year and abridged life tables.
