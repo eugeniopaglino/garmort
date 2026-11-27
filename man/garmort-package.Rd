@@ -8,6 +8,14 @@
 \description{
 Modular tools for constructing reference mortality standards, fitting count-based relational generalized additive mortality models with automated plausibility checks and fallbacks, propagating uncertainty via posterior simulation, and computing single-year and abridged life tables.
 }
+\seealso{
+Useful links:
+\itemize{
+  \item \url{https://github.com/eugeniopaglino/garmort}
+  \item Report bugs at \url{https://github.com/eugeniopaglino/garmort/issues}
+}
+
+}
 \author{
 \strong{Maintainer}: Eugenio Paglino \email{eugeniopaglino@gmail.com} (\href{https://orcid.org/0000-0001-8733-6460}{ORCID})
 

@@ -1,5 +1,4 @@
 library(testthat)
-library(data.table)
 
 test_that("HMD abridged counts reconstruct single-year rates and life tables accurately", {
   rds_path <- system.file("extdata", "hmd_test_data.rds", package = "garmort")

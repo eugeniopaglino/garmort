@@ -1,7 +1,7 @@
 #' @keywords internal
 "_PACKAGE"
 
-#' @importFrom data.table := .GRP .SD
+#' @importFrom data.table := .GRP .SD .N
 NULL
 
 utils::globalVariables(c(

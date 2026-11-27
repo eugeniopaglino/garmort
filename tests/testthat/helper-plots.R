@@ -1,3 +1,5 @@
+suppressPackageStartupMessages(suppressWarnings(library(data.table)))
+
 get_test_plot_dir <- function() {
   env_dir <- Sys.getenv("GARMORT_TEST_PLOTS_DIR", unset = "")
   if (nzchar(env_dir)) {

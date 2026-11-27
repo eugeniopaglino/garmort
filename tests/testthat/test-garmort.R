@@ -1,5 +1,4 @@
 library(testthat)
-library(data.table)
 
 test_that("solve_ax_exponential and check_monotonicity behave as expected", {
   # Constant hazard & uniform exposure -> n / 2

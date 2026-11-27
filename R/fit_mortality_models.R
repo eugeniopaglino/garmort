@@ -28,7 +28,7 @@
 #' @param pred_ages Numeric vector of ages used for post-fit plausibility checks
 #'   and default prediction (default `c(0.2, seq(1.5, 111.5, by = 1))`).
 #' @param dof Integer spline basis dimension for flexible GARM (default `10L`).
-#' @param basis Spline basis type for `s()` (default `"tp"`).
+#' @param basis Spline basis type for `mgcv::s()` (default `"tp"`).
 #' @param min_deaths_for_smooth Minimum total deaths required to attempt a smooth
 #'   age term before falling back to Brass (default `250`).
 #' @param monotone_age Numeric age above which predicted mortality must be
@@ -49,7 +49,7 @@
 #'   - `meta`: List of metadata (`by`, `std_by`, `pred_ages`, `monotone_age`, etc.).
 #' @importFrom data.table as.data.table copy rbindlist setnames setorder fcase
 #' @importFrom mgcv gam s nb
-#' @importFrom stats BIC coef predict lm qlogis plogis
+#' @importFrom stats BIC coef predict lm qlogis plogis quasipoisson
 #' @export
 fit_mortality_models <- function(data,
                                  standard,
@@ -288,8 +288,10 @@ fit_mortality_models <- function(data,
     fit_monotonic <- function(d) {
       if (requireNamespace("scam", quietly = TRUE)) {
         m <- tryCatch(
-          scam::scam(Dx ~ 1 + log_mx_std + s(x, k = k_low, bs = "mpi") + offset(log(Ex)),
-                     family = stats::poisson(), data = d),
+          suppressWarnings(
+            scam::scam(Dx ~ 1 + log_mx_std + s(x, k = k_low, bs = "mpi") + offset(log(Ex)),
+                       family = stats::quasipoisson(), data = d)
+          ),
           error = function(e) NULL
         )
         if (!is.null(m)) return(m)
@@ -322,7 +324,7 @@ fit_mortality_models <- function(data,
       res <- switch(
         fm_target,
         "garm_flexible"  = eval_candidate(fit_flex(sub_dt, k_flex, sel = FALSE), std_sub, "garm_flexible"),
-        "garm_monotonic" = eval_candidate(fit_monotonic(sub_dt), std_sub, "garm_monotonic"),
+        "garm_monotonic" = eval_candidate(fit_monotonic(sub_dt), std_sub, "garm_monotonic", kannisto_tail = TRUE),
         "gam_kannisto"   = eval_candidate(fit_flex(sub_dt, k_flex, sel = TRUE), std_sub, "gam_kannisto", kannisto_tail = TRUE),
         "garm_joint"     = eval_candidate(fit_joint(), std_sub, "garm_joint"),
         "brass"          = eval_candidate(fit_brass(sub_dt), std_sub, "brass"),
@@ -356,12 +358,11 @@ fit_mortality_models <- function(data,
       ))
     }
     
-    # Evaluate candidates
-    candidates <- list(
-      garm_flexible  = eval_candidate(fit_flex(sub_dt, k_flex, sel = TRUE), std_sub, "garm_flexible"),
-      garm_monotonic = eval_candidate(fit_monotonic(sub_dt), std_sub, "garm_monotonic"),
-      gam_kannisto   = eval_candidate(fit_flex(sub_dt, k_flex, sel = TRUE), std_sub, "gam_kannisto", kannisto_tail = TRUE),
-      brass          = res_brass
+    # Stage A: Evaluate true Negative Binomial candidates on comparable BIC
+    nb_candidates <- list(
+      garm_flexible = eval_candidate(fit_flex(sub_dt, k_flex, sel = TRUE), std_sub, "garm_flexible"),
+      gam_kannisto  = eval_candidate(fit_flex(sub_dt, k_flex, sel = TRUE), std_sub, "gam_kannisto", kannisto_tail = TRUE),
+      brass         = res_brass
     )
     
     if (has_joint && !(g_row[[joint_col]] %in% joint_exclude)) {
@@ -369,26 +370,37 @@ fit_mortality_models <- function(data,
       if (!is.null(j_fit)) {
         std_j <- data.table::copy(std_sub)
         std_j[, (joint_col) := factor(get(joint_col), levels = levels(j_fit$model[[joint_col]]))]
-        candidates$garm_joint <- eval_candidate(j_fit, std_j, "garm_joint")
+        nb_candidates$garm_joint <- eval_candidate(j_fit, std_j, "garm_joint")
       }
     }
     
-    # Filter to candidates that converged AND passed the 50+ monotonicity check
-    valid_names <- names(candidates)[vapply(candidates, function(x) isTRUE(x$ok), logical(1))]
+    # Check if any smooth NB model converged and passed 50+ monotonicity
+    smooth_nb <- setdiff(names(nb_candidates), "brass")
+    valid_smooth <- smooth_nb[vapply(nb_candidates[smooth_nb], function(x) isTRUE(x$ok), logical(1))]
     
-    if (length(valid_names) > 0L) {
-      # Among valid models, pick lowest BIC (preferring garm_flexible / joint over brass if BIC improves)
-      bics <- vapply(valid_names, function(nm) {
-        b <- candidates[[nm]]$bic
+    if (length(valid_smooth) > 0L) {
+      valid_all <- names(nb_candidates)[vapply(nb_candidates, function(x) isTRUE(x$ok), logical(1))]
+      bics <- vapply(valid_all, function(nm) {
+        b <- nb_candidates[[nm]]$bic
         if (is.finite(b)) b else Inf
       }, numeric(1))
-      best_name <- valid_names[which.min(bics)]
-      best <- candidates[[best_name]]
+      best_name <- valid_all[which.min(bics)]
+      best <- nb_candidates[[best_name]]
       reason <- if (best_name == "garm_flexible") "bic_and_checks_ok" else "fallback_checks_or_bic"
     } else {
-      # Last resort: Brass even if check flagged
-      best <- res_brass
-      reason <- "all_checks_failed_brass_fallback"
+      # Stage B: Unconstrained smooth NB models failed 50+ monotonicity;
+      # try shape-restricted monotonic spline (with Kannisto tail) vs. Brass
+      res_mono <- eval_candidate(fit_monotonic(sub_dt), std_sub, "garm_monotonic", kannisto_tail = TRUE)
+      if (isTRUE(res_mono$ok)) {
+        best <- res_mono
+        reason <- "monotonic_spline_fallback"
+      } else if (isTRUE(res_brass$ok)) {
+        best <- res_brass
+        reason <- "brass_monotonic_fallback"
+      } else {
+        best <- res_brass
+        reason <- "all_checks_failed_brass_fallback"
+      }
     }
     
     list(
@@ -451,7 +463,7 @@ fit_mortality_models <- function(data,
 #'   - `estimates`: `data.table` with grouping columns, `x`, `mx_std`, and `mx_s`.
 #'   - `simulations`: `data.table` with grouping columns, `x`, and `sim_1..sim_n`
 #'     (or `NULL` if `n_sim == 0`).
-#' @importFrom data.table as.data.table copy rbindlist setnames
+#' @importFrom data.table as.data.table copy rbindlist setnames fcase
 #' @importFrom MASS mvrnorm
 #' @importFrom stats coef predict plogis
 #' @export
@@ -495,8 +507,8 @@ predict_mortality_rates <- function(object,
     }
     nd[, Ex := 1]
     
+    eng <- fit_wrap$engine
     if (!is.null(joint_col) && joint_col %in% names(g_row)) {
-      eng <- fit_wrap$engine
       if (joint_col %in% names(eng$model) && is.factor(eng$model[[joint_col]])) {
         nd[, (joint_col) := factor(g_row[[joint_col]], levels = levels(eng$model[[joint_col]]))]
       } else {
@@ -505,22 +517,33 @@ predict_mortality_rates <- function(object,
     }
     
     # Point estimates via lpmatrix (cleanly excludes offset)
-    Xp <- stats::predict(fit_wrap$engine, newdata = nd, type = "lpmatrix")
-    eta_hat <- as.numeric(Xp %*% stats::coef(fit_wrap$engine))
+    Xp <- stats::predict(eng, newdata = nd, type = "lpmatrix")
+    b_raw <- as.numeric(if (!is.null(stats::coef(eng))) stats::coef(eng) else eng$coefficients)
+    if (length(b_raw) == 0L && !is.null(eng$coefficients)) {
+      b_raw <- as.numeric(eng$coefficients)
+    }
+    
+    is_scam <- inherits(eng, "scam") && !is.null(eng$p.ident)
+    b_hat <- b_raw
+    if (is_scam) {
+      p_id <- eng$p.ident
+      b_hat[p_id] <- exp(b_hat[p_id])
+    }
+    eta_hat <- as.numeric(Xp %*% b_hat)
     mx_hat <- exp(eta_hat)
     
     # Apply Kannisto blending if selected
-    if (!is.null(fit_wrap$kannisto_mod)) {
-      hi_idx <- which(nd$x >= 80)
-      if (length(hi_idx) > 0L) {
-        mx_k <- stats::plogis(stats::predict(fit_wrap$kannisto_mod, newdata = nd[hi_idx]))
-        w_k <- data.table::fcase(
-          nd$x[hi_idx] < 100, 0,
-          nd$x[hi_idx] >= 100 & nd$x[hi_idx] < 105, (nd$x[hi_idx] - 100) / 5,
-          default = 1
-        )
-        mx_hat[hi_idx] <- (1 - w_k) * mx_hat[hi_idx] + w_k * mx_k
-      }
+    hi_idx <- which(nd$x >= 80)
+    w_k <- NULL
+    mx_k <- NULL
+    if (!is.null(fit_wrap$kannisto_mod) && length(hi_idx) > 0L) {
+      mx_k <- as.numeric(stats::plogis(stats::predict(fit_wrap$kannisto_mod, newdata = nd[hi_idx])))
+      w_k <- data.table::fcase(
+        nd$x[hi_idx] < 100, 0,
+        nd$x[hi_idx] >= 100 & nd$x[hi_idx] < 105, (nd$x[hi_idx] - 100) / 5,
+        default = 1
+      )
+      mx_hat[hi_idx] <- (1 - w_k) * mx_hat[hi_idx] + w_k * mx_k
     }
     
     est_dt <- data.table::data.table(x = nd$x, mx_std = nd$mx_std, mx_s = mx_hat)
@@ -530,17 +553,41 @@ predict_mortality_rates <- function(object,
     est_list[[i]] <- est_dt
     
     # Posterior simulations
-    if (n_sim > 0L && !is.null(fit_wrap$engine$Vp)) {
-      beta_sims <- MASS::mvrnorm(n_sim, mu = stats::coef(fit_wrap$engine), Sigma = fit_wrap$engine$Vp)
-      if (is.null(dim(beta_sims))) beta_sims <- matrix(beta_sims, nrow = 1L)
-      rate_sims <- exp(Xp %*% t(beta_sims))
-      s_dt <- data.table::as.data.table(rate_sims)
-      data.table::setnames(s_dt, paste0("sim_", seq_len(n_sim)))
-      s_dt <- cbind(data.table::data.table(x = nd$x), s_dt)
-      if (!is.null(by_cols) && length(by_cols) > 0L) {
-        for (col in by_cols) s_dt[, (col) := g_row[[col]]]
+    if (n_sim > 0L && length(b_raw) > 0L) {
+      if (is_scam && !is.null(eng$Vp.t) && all(dim(eng$Vp.t) == c(length(b_hat), length(b_hat)))) {
+        # Simulate directly on delta-method transformed scale for scam
+        beta_sims <- MASS::mvrnorm(n_sim, mu = b_hat, Sigma = eng$Vp.t)
+        if (is.null(dim(beta_sims))) beta_sims <- matrix(beta_sims, nrow = 1L)
+        p_id <- eng$p.ident
+        beta_sims[, p_id] <- pmax(beta_sims[, p_id, drop = FALSE], 0)
+      } else if (!is.null(eng$Vp) && all(dim(eng$Vp) == c(length(b_raw), length(b_raw)))) {
+        beta_sims <- MASS::mvrnorm(n_sim, mu = b_raw, Sigma = eng$Vp)
+        if (is.null(dim(beta_sims))) beta_sims <- matrix(beta_sims, nrow = 1L)
+        if (is_scam) {
+          p_id <- eng$p.ident
+          beta_sims[, p_id] <- exp(pmin(beta_sims[, p_id, drop = FALSE], 5))
+        }
+      } else {
+        beta_sims <- NULL
       }
-      sim_list[[i]] <- s_dt
+      
+      if (!is.null(beta_sims)) {
+        eta_sims <- Xp %*% t(beta_sims)
+        eta_sims <- pmin(pmax(eta_sims, -30), log(1.5))
+        rate_sims <- exp(eta_sims)
+        
+        if (!is.null(fit_wrap$kannisto_mod) && length(hi_idx) > 0L) {
+          rate_sims[hi_idx, ] <- (1 - w_k) * rate_sims[hi_idx, , drop = FALSE] + w_k * mx_k
+        }
+        
+        s_dt <- data.table::as.data.table(rate_sims)
+        data.table::setnames(s_dt, paste0("sim_", seq_len(n_sim)))
+        s_dt <- cbind(data.table::data.table(x = nd$x), s_dt)
+        if (!is.null(by_cols) && length(by_cols) > 0L) {
+          for (col in by_cols) s_dt[, (col) := g_row[[col]]]
+        }
+        sim_list[[i]] <- s_dt
+      }
     }
   }
   

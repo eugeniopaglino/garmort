@@ -61,7 +61,7 @@ and default prediction (default `c(0.2, seq(1.5, 111.5, by = 1))`).}
 
 \item{dof}{Integer spline basis dimension for flexible GARM (default `10L`).}
 
-\item{basis}{Spline basis type for `s()` (default `"tp"`).}
+\item{basis}{Spline basis type for `mgcv::s()` (default `"tp"`).}
 
 \item{min_deaths_for_smooth}{Minimum total deaths required to attempt a smooth
 age term before falling back to Brass (default `250`).}
