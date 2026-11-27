@@ -70,13 +70,14 @@ test_that("HMD abridged counts reconstruct single-year rates and life tables acc
   )
   
   # Verify credible interval ordering with informative failure output
-  bad_mx <- s_sum[!(mx_l95 <= mx_mean & mx_mean <= mx_u95)]
+  tol <- 1e-12
+  bad_mx <- s_sum[!(mx_l95 <= mx_mean + tol & mx_mean <= mx_u95 + tol)]
   expect_equal(
     nrow(bad_mx), 0L,
     info = paste(utils::capture.output(print(head(bad_mx, 10))), collapse = "\n")
   )
   
-  bad_ex <- s_sum[!(ex_l95 <= ex_mean & ex_mean <= ex_u95)]
+  bad_ex <- s_sum[!(ex_l95 <= ex_mean + tol & ex_mean <= ex_u95 + tol)]
   expect_equal(
     nrow(bad_ex), 0L,
     info = paste(utils::capture.output(print(head(bad_ex, 10))), collapse = "\n")

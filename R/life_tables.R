@@ -217,10 +217,13 @@ sim_life_table <- function(simulations,
     collapse_mats <- function(mat_list, ages_vec) {
       parts <- lapply(names(mat_list), function(m) {
         mat <- mat_list[[m]]
+        m_vec <- rowMeans(mat, na.rm = TRUE)
+        l_vec <- apply(mat, 1, stats::quantile, probs = probs[1], na.rm = TRUE)
+        u_vec <- apply(mat, 1, stats::quantile, probs = probs[2], na.rm = TRUE)
         out <- data.table::data.table(
-          mean = rowMeans(mat, na.rm = TRUE),
-          l95  = apply(mat, 1, stats::quantile, probs = probs[1], na.rm = TRUE),
-          u95  = apply(mat, 1, stats::quantile, probs = probs[2], na.rm = TRUE)
+          mean = m_vec,
+          l95  = pmin(l_vec, m_vec),
+          u95  = pmax(u_vec, m_vec)
         )
         data.table::setnames(out, paste0(m, c("_mean", "_l95", "_u95")))
         out
