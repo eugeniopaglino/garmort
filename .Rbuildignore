@@ -1,0 +1,6 @@
+^LICENSE\.md$
+^garmort\.Rproj$
+^\.Rproj\.user$
+^\.github$
+^test-diagnostics$
+^data-raw$

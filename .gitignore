@@ -1,0 +1,8 @@
+test-diagnostics/
+.Rproj.user
+.Rhistory
+.RData
+.httr-oauth
+.DS_Store
+data-raw/hmd/
+.quarto

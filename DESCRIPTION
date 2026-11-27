@@ -1,0 +1,29 @@
+Package: garmort
+Title: Relational GAM Mortality Modeling and Life Table Estimation
+Version: 0.1.0
+Authors@R: person(
+    given = "Eugenio",
+    family = "Paglino",
+    role = c("aut", "cre"),
+    email = "eugeniopaglino@gmail.com",
+    comment = c(ORCID = "0000-0001-8733-6460")
+  )
+Description: Modular tools for constructing reference mortality standards,
+    fitting count-based relational generalized additive mortality models with
+    automated plausibility checks and fallbacks, propagating uncertainty via
+    posterior simulation, and computing single-year and abridged life tables.
+License: MIT + file LICENSE
+Encoding: UTF-8
+RoxygenNote: 7.3.3
+Imports:
+    data.table,
+    mgcv,
+    MASS,
+    stats
+Suggests:
+    scam,
+    future,
+    future.apply,
+    ggplot2,
+    testthat (>= 3.0.0)
+Config/testthat/edition: 3
