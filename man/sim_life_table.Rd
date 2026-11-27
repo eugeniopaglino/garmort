@@ -10,7 +10,8 @@ sim_life_table(
   by = NULL,
   max_abridged_age = 85,
   radix = 1,
-  probs = c(0.025, 0.975)
+  probs = c(0.025, 0.975),
+  progress = TRUE
 )
 }
 \arguments{
@@ -26,6 +27,9 @@ summaries (default `85`).}
 \item{radix}{Life table radix (default `1`).}
 
 \item{probs}{Numeric length-2 vector of credible interval quantiles (default `c(0.025, 0.975)`).}
+
+\item{progress}{Logical. Display a progress bar when summarizing multiple groups?
+(default `TRUE`).}
 }
 \value{
 A list with `single_year_summary` and `abridged_summary` `data.table`s.

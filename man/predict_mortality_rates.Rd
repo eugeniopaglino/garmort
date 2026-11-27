@@ -9,7 +9,8 @@ predict_mortality_rates(
   standard,
   pred_ages = NULL,
   n_sim = 0L,
-  seed = NULL
+  seed = NULL,
+  progress = TRUE
 )
 }
 \arguments{
@@ -23,6 +24,9 @@ predict_mortality_rates(
 `MASS::mvrnorm()` (default `0L` for point estimates only).}
 
 \item{seed}{Optional integer seed for reproducible simulations.}
+
+\item{progress}{Logical. Display a progress bar when predicting across multiple
+groups? (default `TRUE`).}
 }
 \value{
 A list with:

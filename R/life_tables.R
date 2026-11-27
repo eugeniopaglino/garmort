@@ -147,16 +147,20 @@ lt_abridged <- function(data,
 #'   summaries (default `85`).
 #' @param radix Life table radix (default `1`).
 #' @param probs Numeric length-2 vector of credible interval quantiles (default `c(0.025, 0.975)`).
+#' @param progress Logical. Display a progress bar when summarizing multiple groups?
+#'   (default `TRUE`).
 #' @return A list with `single_year_summary` and `abridged_summary` `data.table`s.
 #' @importFrom data.table as.data.table copy data.table rbindlist setnames setorderv setcolorder fifelse
 #' @importFrom stats quantile
+#' @importFrom utils txtProgressBar setTxtProgressBar
 #' @export
 sim_life_table <- function(simulations,
                            age_col = "x",
                            by = NULL,
                            max_abridged_age = 85,
                            radix = 1,
-                           probs = c(0.025, 0.975)) {
+                           probs = c(0.025, 0.975),
+                           progress = TRUE) {
   sim_dt <- data.table::copy(data.table::as.data.table(simulations))
   if (!age_col %in% names(sim_dt)) stop("Column `", age_col, "` not found in `simulations`.")
   
@@ -239,9 +243,16 @@ sim_life_table <- function(simulations,
     )
   }
   
-  s_list <- vector("list", nrow(gdict))
-  a_list <- vector("list", nrow(gdict))
-  for (i in seq_len(nrow(gdict))) {
+  n_groups <- nrow(gdict)
+  pb <- NULL
+  if (isTRUE(progress) && n_groups > 1L) {
+    pb <- utils::txtProgressBar(min = 0L, max = n_groups, style = 3L)
+    on.exit(if (!is.null(pb)) close(pb), add = TRUE)
+  }
+  
+  s_list <- vector("list", n_groups)
+  a_list <- vector("list", n_groups)
+  for (i in seq_len(n_groups)) {
     gid <- gdict$.grp_id[i]
     res <- summarize_one(sim_dt[.grp_id == gid])
     if (!is.null(by) && length(by) > 0L) {
@@ -252,6 +263,7 @@ sim_life_table <- function(simulations,
     }
     s_list[[i]] <- res$single
     a_list[[i]] <- res$abridged
+    if (!is.null(pb)) utils::setTxtProgressBar(pb, i)
   }
   
   s_out <- data.table::rbindlist(s_list, use.names = TRUE)

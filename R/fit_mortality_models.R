@@ -42,6 +42,8 @@
 #'   `"gam_kannisto"`, `"garm_joint"`, `"brass"`) and one or more columns from `by`.
 #' @param workers Integer number of parallel workers (default `1L`). Values > 1
 #'   use `future.apply` with a cross-platform `multisession` plan.
+#' @param progress Logical. Display a progress bar / status messages when
+#'   fitting multiple groups? (default `TRUE`).
 #' @return An S3 object of class `"garmort_fits"` containing:
 #'   - `fits`: Named list of fitted model objects (one per group).
 #'   - `diagnostics`: `data.table` with per-group model selection and check results.
@@ -50,6 +52,7 @@
 #' @importFrom data.table as.data.table copy rbindlist setnames setorder fcase
 #' @importFrom mgcv gam s nb
 #' @importFrom stats BIC coef predict lm qlogis plogis quasipoisson
+#' @importFrom utils txtProgressBar setTxtProgressBar
 #' @export
 fit_mortality_models <- function(data,
                                  standard,
@@ -69,7 +72,8 @@ fit_mortality_models <- function(data,
                                  joint_col = NULL,
                                  joint_exclude = c("Total", "total"),
                                  force_models = NULL,
-                                 workers = 1L) {
+                                 workers = 1L,
+                                 progress = TRUE) {
   
   dt <- data.table::copy(data.table::as.data.table(data))
   std <- data.table::copy(data.table::as.data.table(standard))
@@ -415,16 +419,45 @@ fit_mortality_models <- function(data,
     )
   }
   
-  # Execute across groups (cross-platform parallel or sequential)
+  # Execute across groups (cross-platform parallel or sequential) with optional progress
   gids <- group_dict$.grp_id
+  n_groups <- length(gids)
+  show_prog <- isTRUE(progress) && n_groups > 1L
+  
   if (workers > 1L && requireNamespace("future", quietly = TRUE) &&
       requireNamespace("future.apply", quietly = TRUE)) {
     old_plan <- future::plan()
     on.exit(future::plan(old_plan), add = TRUE)
     future::plan(future::multisession, workers = as.integer(workers))
-    results <- future.apply::future_lapply(gids, fit_one_group, future.seed = TRUE)
+    
+    if (show_prog && requireNamespace("progressr", quietly = TRUE)) {
+      results <- progressr::with_progress({
+        p <- progressr::progressor(along = gids)
+        future.apply::future_lapply(gids, function(gid) {
+          res <- fit_one_group(gid)
+          p()
+          res
+        }, future.seed = TRUE)
+      })
+    } else {
+      if (show_prog) {
+        message(sprintf("Fitting %d mortality series across %d workers...",
+                        n_groups, as.integer(workers)))
+      }
+      results <- future.apply::future_lapply(gids, fit_one_group, future.seed = TRUE)
+      if (show_prog) message("Done fitting mortality models.")
+    }
   } else {
-    results <- lapply(gids, fit_one_group)
+    pb <- NULL
+    if (show_prog) {
+      pb <- utils::txtProgressBar(min = 0L, max = n_groups, style = 3L)
+      on.exit(if (!is.null(pb)) close(pb), add = TRUE)
+    }
+    results <- vector("list", n_groups)
+    for (idx in seq_len(n_groups)) {
+      results[[idx]] <- fit_one_group(gids[idx])
+      if (!is.null(pb)) utils::setTxtProgressBar(pb, idx)
+    }
   }
   
   fits_list <- lapply(results, `[[`, "fit")
@@ -459,6 +492,8 @@ fit_mortality_models <- function(data,
 #' @param n_sim Integer number of posterior draws per group via `lpmatrix` and
 #'   `MASS::mvrnorm()` (default `0L` for point estimates only).
 #' @param seed Optional integer seed for reproducible simulations.
+#' @param progress Logical. Display a progress bar when predicting across multiple
+#'   groups? (default `TRUE`).
 #' @return A list with:
 #'   - `estimates`: `data.table` with grouping columns, `x`, `mx_std`, and `mx_s`.
 #'   - `simulations`: `data.table` with grouping columns, `x`, and `sim_1..sim_n`
@@ -466,12 +501,14 @@ fit_mortality_models <- function(data,
 #' @importFrom data.table as.data.table copy rbindlist setnames fcase
 #' @importFrom MASS mvrnorm
 #' @importFrom stats coef predict plogis
+#' @importFrom utils txtProgressBar setTxtProgressBar
 #' @export
 predict_mortality_rates <- function(object,
                                     standard,
                                     pred_ages = NULL,
                                     n_sim = 0L,
-                                    seed = NULL) {
+                                    seed = NULL,
+                                    progress = TRUE) {
   if (!inherits(object, "garmort_fits")) {
     stop("`object` must be a `garmort_fits` object.")
   }
@@ -486,14 +523,24 @@ predict_mortality_rates <- function(object,
   std_by <- object$meta$std_by
   joint_col <- object$meta$joint_col
   gdict <- object$group_dict
+  n_groups <- nrow(gdict)
   
-  est_list <- vector("list", nrow(gdict))
-  sim_list <- if (n_sim > 0L) vector("list", nrow(gdict)) else NULL
+  est_list <- vector("list", n_groups)
+  sim_list <- if (n_sim > 0L) vector("list", n_groups) else NULL
   
-  for (i in seq_len(nrow(gdict))) {
+  pb <- NULL
+  if (isTRUE(progress) && n_groups > 1L) {
+    pb <- utils::txtProgressBar(min = 0L, max = n_groups, style = 3L)
+    on.exit(if (!is.null(pb)) close(pb), add = TRUE)
+  }
+  
+  for (i in seq_len(n_groups)) {
     gid <- gdict$.grp_id[i]
     fit_wrap <- object$fits[[as.character(gid)]]
-    if (is.null(fit_wrap)) next
+    if (is.null(fit_wrap)) {
+      if (!is.null(pb)) utils::setTxtProgressBar(pb, i)
+      next
+    }
     
     g_row <- gdict[i]
     if (length(std_by) > 0L) {
@@ -581,6 +628,8 @@ predict_mortality_rates <- function(object,
       }
       sim_list[[i]] <- s_dt
     }
+    
+    if (!is.null(pb)) utils::setTxtProgressBar(pb, i)
   }
   
   est_out <- data.table::rbindlist(est_list, use.names = TRUE)

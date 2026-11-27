@@ -23,7 +23,8 @@ fit_mortality_models(
   joint_col = NULL,
   joint_exclude = c("Total", "total"),
   force_models = NULL,
-  workers = 1L
+  workers = 1L,
+  progress = TRUE
 )
 }
 \arguments{
@@ -81,6 +82,9 @@ contain a `forced_model` column (one of `"garm_flexible"`, `"garm_monotonic"`,
 
 \item{workers}{Integer number of parallel workers (default `1L`). Values > 1
 use `future.apply` with a cross-platform `multisession` plan.}
+
+\item{progress}{Logical. Display a progress bar / status messages when
+fitting multiple groups? (default `TRUE`).}
 }
 \value{
 An S3 object of class `"garmort_fits"` containing:

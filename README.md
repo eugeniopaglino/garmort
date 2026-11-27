@@ -18,7 +18,7 @@
   5. `brass` — Two-parameter relational model (`~ 1 + log_mx_std`) for sparse count series
 * **Manual Overrides & Per-Group Diagnostics:** Supports explicit per-stratum model overrides (`force_models`) and returns a structured `diagnostics` `data.table` recording selected models, BIC, EDF, total deaths/exposures, and monotonicity check results.
 * **Posterior Simulation & Life Tables (`predict_mortality_rates()`, `lt_single()`, `lt_abridged()`, `sim_life_table()`):** Draws from the posterior covariance matrix (`Vp`) to produce single-year and abridged life tables with 95% credible intervals, plus analytical exponential-hazard $a_x$ solvers (`solve_ax_exponential()`).
-* **Cross-Platform Parallelization:** Supports multi-worker execution on macOS, Windows, and Linux via `future.apply`.
+* **Cross-Platform Parallelization & Progress Tracking:** Supports multi-worker execution on macOS, Windows, and Linux via `future.apply` (`workers > 1`) and built-in progress reporting (`progress = TRUE`) across fitting, prediction, and simulation steps.
 
 ## Installation
 
@@ -29,10 +29,10 @@ Install the development version directly from GitHub:
 remotes::install_github("eugeniopaglino/garmort")
 ```
 
-Optional packages enabling monotonic spline fallbacks, cross-platform parallel workers, and diagnostic plots:
+Optional packages enabling monotonic spline fallbacks, cross-platform parallel workers, parallel progress bars, and diagnostic plots:
 
 ```r
-install.packages(c("scam", "future", "future.apply", "ggplot2"))
+install.packages(c("scam", "future", "future.apply", "progressr", "ggplot2"))
 ```
 
 ## Quick Start
@@ -62,7 +62,8 @@ fits <- fit_mortality_models(
   compute_midpoints = TRUE,
   exclude_open = TRUE,
   joint_col = "nativity",
-  workers = 4L
+  workers = 4L,
+  progress = TRUE
 )
 
 # Inspect model selection and 50+ monotonicity diagnostics per series
@@ -74,7 +75,8 @@ preds <- predict_mortality_rates(
   standard = std_res$standard,
   pred_ages = c(0.2, seq(1.5, 110.5, by = 1)),
   n_sim = 500L,
-  seed = 123L
+  seed = 123L,
+  progress = TRUE
 )
 
 # 4. Compute point-estimate or posterior-summarized life tables
@@ -84,9 +86,11 @@ lt_1y <- lt_single(est, age_col = "age", mx_col = "mx_s",
 
 sim_lts <- sim_life_table(
   simulations = preds$simulations,
+  age_col = "x",
   by = c("state", "year", "sex", "nativity"),
   max_abridged_age = 85,
-  radix = 1
+  radix = 1,
+  progress = TRUE
 )
 ```
 
@@ -95,7 +99,7 @@ sim_lts <- sim_life_table(
 | Function | Purpose |
 | :--- | :--- |
 | `build_standard()` | Smooth reference mortality rates and blend Kannisto old-age tails with 50+ monotonicity checks |
-| `fit_mortality_models()` | Fit grouped negative binomial relational GAMs with automated fallback ladder and diagnostics |
+| `fit_mortality_models()` | Fit grouped negative binomial relational GAMs with automated fallback ladder, progress tracking, and diagnostics |
 | `predict_mortality_rates()` | Predict point-estimate rates (`mx_s`) and posterior rate draws (`sim_1..sim_n`) |
 | `lt_single()` / `lt_abridged()` | Compute single-year and abridged life tables across grouped `data.table`s |
 | `sim_life_table()` | Aggregate posterior single-year rate simulations into single-year and abridged life table summaries with credible intervals |
