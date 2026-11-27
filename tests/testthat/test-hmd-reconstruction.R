@@ -1,4 +1,5 @@
 library(testthat)
+suppressPackageStartupMessages(suppressWarnings(library(data.table)))
 
 test_that("HMD abridged counts reconstruct single-year rates and life tables accurately", {
   rds_path <- system.file("extdata", "hmd_test_data.rds", package = "garmort")
@@ -79,6 +80,13 @@ test_that("HMD abridged counts reconstruct single-year rates and life tables acc
   expect_equal(
     nrow(bad_ex), 0L,
     info = paste(utils::capture.output(print(head(bad_ex, 10))), collapse = "\n")
+  )
+  
+  # Merge point-estimate single-year life tables with HMD truth
+  comp <- merge(
+    lt_est[, .(country, year, sex, age, mx_s = mx, lx_s = lx, ex_s = ex)],
+    hmd$truth_1y,
+    by = c("country", "year", "sex", "age")
   )
   
   # Accuracy checks by country-year (Total sex)

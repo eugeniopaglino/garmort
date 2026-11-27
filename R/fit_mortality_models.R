@@ -559,12 +559,13 @@ predict_mortality_rates <- function(object,
       if (is.null(dim(beta_sims))) beta_sims <- matrix(beta_sims, nrow = 1L)
       if (is_scam) {
         p_id <- eng$p.ident
-        beta_sims[, p_id] <- exp(pmin(beta_sims[, p_id, drop = FALSE], 5))
+        dev_p <- sweep(beta_sims[, p_id, drop = FALSE], 2L, b_raw[p_id], "-")
+        dev_p <- pmin(pmax(dev_p, -2.5), 2.5)
+        beta_sims[, p_id] <- exp(sweep(dev_p, 2L, b_raw[p_id], "+"))
       }
       
       eta_sims <- Xp %*% t(beta_sims)
-      # Guard against extreme numerical outliers while preserving full posterior spread
-      eta_sims <- eta_hat + pmin(pmax(eta_sims - eta_hat, -5), 5)
+      eta_sims <- eta_hat + pmin(pmax(eta_sims - eta_hat, -2.5), 2.5)
       eta_sims <- pmin(pmax(eta_sims, -30), log(1.5))
       rate_sims <- exp(eta_sims)
       
