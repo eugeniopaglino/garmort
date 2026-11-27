@@ -62,14 +62,23 @@ test_that("HMD abridged counts reconstruct single-year rates and life tables acc
   )
   s_sum <- sim_lt$single_year_summary
   
-  # Verify credible interval ordering
-  expect_true(all(s_sum$mx_l95 <= s_sum$mx_mean & s_sum$mx_mean <= s_sum$mx_u95))
-  expect_true(all(s_sum$ex_l95 <= s_sum$ex_mean & s_sum$ex_mean <= s_sum$ex_u95))
+  # Save diagnostics + simulation summaries to artifact folder for remote inspection
+  saveRDS(
+    list(diagnostics = fits$diagnostics, single_year_summary = s_sum),
+    file.path(get_test_plot_dir(), "hmd_ci_diagnostics.rds")
+  )
   
-  comp <- merge(
-    lt_est[, .(country, year, sex, age, mx_s = mx, lx_s = lx, ex_s = ex)],
-    hmd$truth_1y,
-    by = c("country", "year", "sex", "age")
+  # Verify credible interval ordering with informative failure output
+  bad_mx <- s_sum[!(mx_l95 <= mx_mean & mx_mean <= mx_u95)]
+  expect_equal(
+    nrow(bad_mx), 0L,
+    info = paste(utils::capture.output(print(head(bad_mx, 10))), collapse = "\n")
+  )
+  
+  bad_ex <- s_sum[!(ex_l95 <= ex_mean & ex_mean <= ex_u95)]
+  expect_equal(
+    nrow(bad_ex), 0L,
+    info = paste(utils::capture.output(print(head(bad_ex, 10))), collapse = "\n")
   )
   
   # Accuracy checks by country-year (Total sex)
